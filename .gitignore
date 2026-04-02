@@ -1,0 +1,22 @@
+# node modules
+node_modules
+client/node_modules
+server/node_modules
+
+# env files (MOST IMPORTANT)
+.env
+.env.*
+client/.env
+server/.env
+
+# build
+dist
+build
+
+# logs
+logs
+*.log
+
+# vscode
+.vscode
+.idea
