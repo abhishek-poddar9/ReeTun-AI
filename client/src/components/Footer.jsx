@@ -9,7 +9,7 @@ const Footer = () => {
         <div className="md:max-w-96">
             <img className="h-9" src={logo} alt="logo"/>
             <p className="mt-6 text-sm">
-                ReeTunAI is an advanced AI platform designed to enhance productivity through intelligent content creation and image processing tools. <br/>It enables users to generate, edit, and optimize digital content efficiently.
+                ReeTun AI is an advanced AI platform designed to enhance productivity through intelligent content creation and image processing tools. <br/>It enables users to generate, edit, and optimize digital content efficiently.
             </p>
         </div>
         <div className="flex-1 flex items-start md:justify-end gap-20">
@@ -35,7 +35,7 @@ const Footer = () => {
         </div>
     </div>
     <p className="pt-4 text-center text-xs md:text-sm pb-5">
-        Copyright 2025 © ReeTunAI. All Right Reserved.
+        Copyright 2026 © ReeTun AI. All Right Reserved.
     </p>
 </footer>
   )

@@ -18,11 +18,16 @@ const looksIncomplete = (text = "") => {
   const value = String(text || "").trim();
 
   if (!value) return true;
+  if (value.length < 700) return true;
 
   const endsWell = /[.!?)"\]]$/.test(value);
-  const hasEnoughLength = value.length > 300;
+  const hasTooManyDots = /\.\.\./.test(value);
+  const hasCutEnding =
+    /(strengths|weaknesses|suggestions|final verdict|missing keywords|summary)\s*:?$/i.test(
+      value
+    );
 
-  return !(endsWell && hasEnoughLength);
+  return !endsWell || hasTooManyDots || hasCutEnding;
 };
 
 const extractTitles = (rawText = "") => {
@@ -56,19 +61,168 @@ const extractTitles = (rawText = "") => {
   return unique.slice(0, 10);
 };
 
-const hasResumeSections = (text = "") => {
-  const value = String(text || "").toLowerCase();
-
-  return (
-    value.includes("overall ats score") &&
-    value.includes("strengths") &&
-    value.includes("weaknesses") &&
-    value.includes("suggestions for improvement") &&
-    value.includes("final verdict")
-  );
+const getBulletCount = (sectionText = "") => {
+  return String(sectionText)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => /^[-*•]\s+/.test(line)).length;
 };
 
+const extractSection = (text = "", heading = "") => {
+  const escapedHeading = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+  const regex = new RegExp(
+    `##\\s*${escapedHeading}\\s*([\\s\\S]*?)(?=\\n##\\s|$)`,
+    "i"
+  );
+
+  const match = String(text).match(regex);
+  return match ? match[1].trim() : "";
+};
+
+const hasResumeSections = (text = "") => {
+  const value = String(text || "");
+
+  const requiredHeadings = [
+    "## Overall ATS Score",
+    "## Summary",
+    "## Strengths",
+    "## Weaknesses",
+    "## Suggestions for Improvement",
+    "## Missing Keywords / ATS Improvements",
+    "## Final Verdict",
+  ];
+
+  const allHeadingsExist = requiredHeadings.every((heading) =>
+    value.toLowerCase().includes(heading.toLowerCase())
+  );
+
+  if (!allHeadingsExist) return false;
+
+  const strengths = extractSection(value, "Strengths");
+  const weaknesses = extractSection(value, "Weaknesses");
+  const suggestions = extractSection(value, "Suggestions for Improvement");
+  const keywords = extractSection(value, "Missing Keywords / ATS Improvements");
+  const verdict = extractSection(value, "Final Verdict");
+  const summary = extractSection(value, "Summary");
+  const score = extractSection(value, "Overall ATS Score");
+
+  if (!score || !summary || !verdict) return false;
+  if (getBulletCount(strengths) < 4) return false;
+  if (getBulletCount(weaknesses) < 4) return false;
+  if (getBulletCount(suggestions) < 6) return false;
+  if (getBulletCount(keywords) < 5) return false;
+
+  return true;
+};
+
+const buildResumePrompt = (resumeText) => `
+You are an expert ATS Resume Reviewer and technical hiring evaluator.
+
+Carefully analyze the following resume text and return a COMPLETE, PROFESSIONAL, and WELL-STRUCTURED review in VALID MARKDOWN format.
+
+Resume text:
+"""
+${resumeText}
+"""
+
+You MUST return the response in EXACTLY this structure:
+
+# Resume Review
+
+## Overall ATS Score
+Give:
+- ATS score in this format: **78/100**
+- Then 2 to 3 lines explaining why this score was given
+
+## Summary
+Write 3 to 4 professional lines summarizing the overall resume quality, ATS readability, keyword strength, and recruiter impression.
+
+## Strengths
+Give EXACTLY 4 bullet points.
+Each bullet must start with "- ".
+
+## Weaknesses
+Give EXACTLY 4 bullet points.
+Each bullet must start with "- ".
+
+## Suggestions for Improvement
+Give EXACTLY 6 bullet points.
+Each bullet must start with "- ".
+
+## Missing Keywords / ATS Improvements
+Give EXACTLY 5 bullet points.
+Each bullet must start with "- ".
+
+## Final Verdict
+Write 4 to 5 lines giving the final overall judgment.
+
+Strict rules:
+- Do not skip any section
+- Do not stop midway
+- Do not write any introduction before "# Resume Review"
+- Do not write any extra section apart from the required sections
+- Do not use tables
+- Do not use numbering
+- Every required bullet point must be complete and meaningful
+- Response must be complete and polished
+- Do not output placeholder text
+- Do not repeat the same point
+`;
+
+const callGemini = async ({
+  prompt,
+  temperature = 0.7,
+  maxTokens = 1200,
+}) => {
+  const response = await AI.chat.completions.create({
+    model: "gemini-2.5-flash",
+    messages: [{ role: "user", content: prompt }],
+    temperature,
+    max_tokens: maxTokens,
+  });
+
+  const content = response?.choices?.[0]?.message?.content;
+
+  if (Array.isArray(content)) {
+    return content.map((item) => item?.text || "").join("").trim();
+  }
+
+  return String(content || "").trim();
+};
+
+const generateResumeReviewContent = async (resumeText) => {
+  let bestContent = "";
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const prompt =
+      attempt === 1
+        ? buildResumePrompt(resumeText)
+        : `
+The previous response was incomplete or did not follow the required structure.
+
+Please regenerate the ENTIRE response from scratch.
+
+${buildResumePrompt(resumeText)}
+`;
+
+    const content = await callGemini({
+      prompt,
+      temperature: 0.3,
+      maxTokens: 3000,
+    });
+
+    if (content && content.length > bestContent.length) {
+      bestContent = content;
+    }
+
+    if (hasResumeSections(content) && !looksIncomplete(content)) {
+      return content.trim();
+    }
+  }
+
+  return bestContent.trim();
+};
 
 const continueIfNeeded = async ({
   originalContent,
@@ -136,21 +290,6 @@ const handleAiError = (res, error, featureName = "AI Request") => {
     success: false,
     message: error?.message || "Something went wrong while processing request.",
   });
-};
-
-const callGemini = async ({
-  prompt,
-  temperature = 0.7,
-  maxTokens = 1200,
-}) => {
-  const response = await AI.chat.completions.create({
-    model: "gemini-2.5-flash",
-    messages: [{ role: "user", content: prompt }],
-    temperature,
-    max_tokens: maxTokens,
-  });
-
-  return response?.choices?.[0]?.message?.content?.trim() || "";
 };
 
 const normalizeLength = (length = "") => {
@@ -262,7 +401,7 @@ Strict instructions:
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       content,
     });
@@ -363,7 +502,7 @@ Rules:
       });
     }
 
-    res.json({ success: true, content });
+    return res.json({ success: true, content });
   } catch (error) {
     return handleAiError(res, error, "Generate Blog Title");
   }
@@ -406,10 +545,10 @@ export const generateImage = async (req, res) => {
       VALUES (${userId}, ${prompt}, ${secure_url}, 'image', ${publish ?? false})
     `;
 
-    res.json({ success: true, content: secure_url });
+    return res.json({ success: true, content: secure_url });
   } catch (error) {
     console.log("Generate Image ERROR:", error?.message || error);
-    res.json({
+    return res.json({
       success: false,
       message: error?.message || "Image generation failed.",
     });
@@ -443,10 +582,10 @@ export const removeImageBackground = async (req, res) => {
       VALUES (${userId}, 'Remove background from image', ${secure_url}, 'image')
     `;
 
-    res.json({ success: true, content: secure_url });
+    return res.json({ success: true, content: secure_url });
   } catch (error) {
     console.log("Remove Background ERROR:", error?.message || error);
-    res.json({
+    return res.json({
       success: false,
       message: error?.message || "Background removal failed.",
     });
@@ -479,10 +618,10 @@ export const removeImageObject = async (req, res) => {
       VALUES (${userId}, ${`Removed ${object} from image`}, ${imageUrl}, 'image')
     `;
 
-    res.json({ success: true, content: imageUrl });
+    return res.json({ success: true, content: imageUrl });
   } catch (error) {
     console.log("Remove Object ERROR:", error?.message || error);
-    res.json({
+    return res.json({
       success: false,
       message: error?.message || "Object removal failed.",
     });
@@ -518,62 +657,28 @@ export const resumeReview = async (req, res) => {
 
     const dataBuffer = fs.readFileSync(resume.path);
     const pdfData = await pdf(dataBuffer);
+
     const resumeText = String(pdfData.text || "")
-      .replace(/\s+/g, " ")
+      .replace(/\r/g, " ")
+      .replace(/\n+/g, "\n")
+      .replace(/[ \t]+/g, " ")
       .trim()
-      .slice(0, 7000);
+      .slice(0, 12000);
 
-    const finalPrompt = `
-You are an expert ATS resume reviewer.
+    if (!resumeText || resumeText.length < 100) {
+      return res.json({
+        success: false,
+        message: "Could not extract enough text from the uploaded PDF resume.",
+      });
+    }
 
-Review this resume and return a COMPLETE and properly structured result.
+    const content = await generateResumeReviewContent(resumeText);
 
-Resume text:
-${resumeText}
-
-Return in exactly this structure:
-
-# Resume Review
-
-## Overall ATS Score
-Give a score out of 100 and one short reason.
-
-## Strengths
-Give 4 bullet points.
-
-## Weaknesses
-Give 4 bullet points.
-
-## Suggestions for Improvement
-Give 6 bullet points.
-
-## Missing Keywords / ATS Improvements
-Give 5 bullet points.
-
-## Final Verdict
-Write 3 to 4 lines.
-
-Strict rules:
-- Do not skip any section.
-- Do not stop midway.
-- Do not write random intro text.
-- Return only the final review.
-`;
-
-    let content = await callGemini({
-      prompt: finalPrompt,
-      temperature: 0.4,
-      maxTokens: 2200,
-    });
-
-    if (!hasResumeSections(content) || looksIncomplete(content)) {
-      content = await continueIfNeeded({
-        originalContent: content,
-        topic: "resume review",
-        type: "resume review",
-        extraInstruction:
-          "Complete all missing sections properly, especially Overall ATS Score, Strengths, Weaknesses, Suggestions for Improvement, Missing Keywords / ATS Improvements, and Final Verdict.",
-        maxTokens: 1200,
+    if (!content || !hasResumeSections(content)) {
+      return res.json({
+        success: false,
+        message:
+          "Could not generate a proper structured resume review. Please try again.",
       });
     }
 
@@ -582,8 +687,27 @@ Strict rules:
       VALUES (${userId}, 'Review the uploaded resume', ${content}, 'resume-review')
     `;
 
-    res.json({ success: true, content });
+    try {
+      if (resume.path && fs.existsSync(resume.path)) {
+        fs.unlinkSync(resume.path);
+      }
+    } catch (cleanupError) {
+      console.log("Resume file cleanup error:", cleanupError?.message);
+    }
+
+    return res.json({
+      success: true,
+      content,
+    });
   } catch (error) {
+    try {
+      if (req.file?.path && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+    } catch (cleanupError) {
+      console.log("Resume file cleanup error:", cleanupError?.message);
+    }
+
     return handleAiError(res, error, "Resume Review");
   }
 };

@@ -21,22 +21,22 @@ aiRouter.post("/generate-image", auth, generateImage);
 
 aiRouter.post(
   "/remove-image-background",
-  upload.single("image"),
   auth,
+  upload.single("image"),
   removeImageBackground
 );
 
 aiRouter.post(
   "/remove-image-object",
-  upload.single("image"),
   auth,
+  upload.single("image"),
   removeImageObject
 );
 
 aiRouter.post(
   "/resume-review",
-  upload.single("resume"),
   auth,
+  upload.single("resume"),
   resumeReview
 );
 

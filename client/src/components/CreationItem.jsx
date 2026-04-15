@@ -34,5 +34,4 @@ const CreationItem = ({item}) => {
     </div>
   )
 }
-
 export default CreationItem
