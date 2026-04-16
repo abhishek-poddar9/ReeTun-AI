@@ -21,7 +21,7 @@ ReeTun AI is a scalable AI-powered web platform that enables users to generate c
 
 ### Frontend
 - React.js
-- JavaScript
+- JavaScript (ES6+)
 - HTML5
 - CSS3
 - Tailwind CSS
