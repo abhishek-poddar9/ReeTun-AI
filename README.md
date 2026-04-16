@@ -1,6 +1,6 @@
-# ReeTunAI
+# ReeTun AI
 
-ReeTunAI is a scalable AI-powered web platform that enables users to generate content, process images, and analyze resumes through a secure and modular full-stack architecture.
+ReeTun AI is a scalable AI-powered web platform that enables users to generate content, process images, and analyze resumes through a secure and modular full-stack architecture.
 
 ## Features
 
