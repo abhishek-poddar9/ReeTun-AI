@@ -4,7 +4,7 @@ import { assets } from '../assets/assets'
 import { Menu, X } from 'lucide-react'
 import Sidebar from '../components/Sidebar'
 import {SignIn, useUser } from '@clerk/clerk-react'
-import logo from "../assets/image.png";
+import logo from "../assets/Image.png";
 
 const Layout = () => {
 
